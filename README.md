@@ -1,3 +1,5 @@
+![DX12 overlay pipeline](header.png)
+
 # PresentHookEx-DX12
 
 PresentHookEx-DX12 is an external Windows x64 DX12 overlay example designed to work with applications running in fullscreen. `Example.exe` selects a target process, installs a remote `IDXGISwapChain::Present` hook, renders the overlay into a shared texture, and composites that texture onto the target's current back buffer.
