@@ -1,470 +1,206 @@
 #include <HeadlessRenderer/LiquidMenu.h>
 #include <imgui/imgui.h>
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+namespace {
+    void SectionHeader(const char* label) {
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.30f, 0.72f, 1.0f, 1.0f));
+        ImGui::TextUnformatted(label);
+        ImGui::PopStyleColor();
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
 
-static void HelpMarker(const char* desc)
-{
-    ImGui::TextDisabled("(?)");
-    if (ImGui::IsItemHovered())
-    {
-        ImGui::BeginTooltip();
-        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28.0f);
-        ImGui::TextUnformatted(desc);
+    void StepRow(const char* number, const char* title, const char* description) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.28f, 0.75f, 1.0f, 1.0f));
+        ImGui::Text("%s", number);
+        ImGui::PopStyleColor();
+        ImGui::SameLine(36.0f);
+        ImGui::TextUnformatted(title);
+        ImGui::SameLine(190.0f);
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextWrapped("%s", description);
         ImGui::PopTextWrapPos();
-        ImGui::EndTooltip();
+        ImGui::Spacing();
     }
-}
 
-static void SectionHeader(const char* label)
-{
-    ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.30f, 0.65f, 1.0f, 1.0f));
-    ImGui::TextUnformatted(label);
-    ImGui::PopStyleColor();
-    ImGui::Separator();
-    ImGui::Spacing();
-}
+    void DrawPipeline() {
+        const char* labels[] = { "Example.exe", "Target DX12", "Shared BGRA", "Present" };
+        const ImU32 colors[] = {
+            IM_COL32(48, 112, 190, 255), IM_COL32(50, 145, 190, 255),
+            IM_COL32(56, 150, 112, 255), IM_COL32(128, 82, 190, 255)
+        };
+        const float boxWidth = 112.0f;
+        const float boxHeight = 38.0f;
+        const float gap = 34.0f;
+        const float totalWidth = boxWidth * 4.0f + gap * 3.0f;
+        const float startX = ImGui::GetCursorScreenPos().x +
+            (ImGui::GetContentRegionAvail().x - totalWidth) * 0.5f;
+        const float startY = ImGui::GetCursorScreenPos().y + 4.0f;
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
 
-static void Badge(const char* text, ImVec4 col)
-{
-    ImVec2 p = ImGui::GetCursorScreenPos();
-    ImVec2 textSz = ImGui::CalcTextSize(text);
-    float  pad = 4.0f;
-    ImVec2 rectMin = p;
-    ImVec2 rectMax = ImVec2(p.x + textSz.x + pad * 2, p.y + textSz.y + pad * 0.8f);
-
-    ImGui::GetWindowDrawList()->AddRectFilled(rectMin, rectMax, ImGui::ColorConvertFloat4ToU32(col), 4.0f);
-    ImGui::SetCursorScreenPos(ImVec2(p.x + pad, p.y + pad * 0.4f));
-    ImGui::TextUnformatted(text);
-    ImGui::SetCursorScreenPos(ImVec2(p.x, rectMax.y + 2.0f));
-}
-
-static void InlineCode(const char* text)
-{
-    ImVec4 bgCol = ImVec4(0.12f, 0.14f, 0.20f, 1.0f);
-    ImVec4 fgCol = ImVec4(0.80f, 0.85f, 1.00f, 1.0f);
-    ImVec2 p = ImGui::GetCursorScreenPos();
-    ImVec2 textSz = ImGui::CalcTextSize(text);
-    float  padX = 5.0f, padY = 2.0f;
-    ImVec2 rMin = p;
-    ImVec2 rMax = ImVec2(p.x + textSz.x + padX * 2, p.y + textSz.y + padY * 2);
-
-    ImGui::GetWindowDrawList()->AddRectFilled(rMin, rMax, ImGui::ColorConvertFloat4ToU32(bgCol), 3.0f);
-    ImGui::SetCursorScreenPos(ImVec2(p.x + padX, p.y + padY));
-    ImGui::PushStyleColor(ImGuiCol_Text, fgCol);
-    ImGui::TextUnformatted(text);
-    ImGui::PopStyleColor();
-    ImGui::SetCursorScreenPos(ImVec2(p.x + rMax.x - rMin.x + 6.0f, p.y));
-    ImGui::Dummy(ImVec2(0, rMax.y - rMin.y));
-    ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + rMax.y - rMin.y + 2.0f));
-}
-
-// Draw a simple horizontal flow diagram using the draw list
-static void DrawFlowDiagram()
-{
-    const float nodeW = 130.0f;
-    const float nodeH = 36.0f;
-    const float gapX = 44.0f;
-    const float rounding = 6.0f;
-
-    struct Node { const char* label; ImVec4 col; };
-    Node nodes[] = {
-        { "HeadlessRenderer",  ImVec4(0.15f, 0.40f, 0.70f, 1.0f) },
-        { "SharedTexture\n(KeyedMutex)", ImVec4(0.20f, 0.55f, 0.35f, 1.0f) },
-        { "hkPresent\n(<your_target>.exe)",        ImVec4(0.65f, 0.30f, 0.20f, 1.0f) },
-        { "Backbuffer\nComposite",        ImVec4(0.45f, 0.20f, 0.60f, 1.0f) },
-    };
-
-    const int   count = (int)(sizeof(nodes) / sizeof(nodes[0]));
-    const float totalW = count * nodeW + (count - 1) * gapX;
-
-    ImVec2 cursor = ImGui::GetCursorScreenPos();
-    float  startX = cursor.x + (ImGui::GetContentRegionAvail().x - totalW) * 0.5f;
-    float  startY = cursor.y + 6.0f;
-
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-
-    for (int i = 0; i < count; ++i)
-    {
-        float x0 = startX + i * (nodeW + gapX);
-        float y0 = startY;
-        float x1 = x0 + nodeW;
-        float y1 = y0 + nodeH;
-
-        // Box
-        dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1),
-            ImGui::ColorConvertFloat4ToU32(nodes[i].col), rounding);
-        dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1),
-            IM_COL32(255, 255, 255, 40), rounding);
-
-        // Label (centred, multiline-aware)
-        ImVec2 tsz = ImGui::CalcTextSize(nodes[i].label, nullptr, false, nodeW - 8.0f);
-        float  tx = x0 + (nodeW - tsz.x) * 0.5f;
-        float  ty = y0 + (nodeH - tsz.y) * 0.5f;
-        dl->AddText(nullptr, 0.0f, ImVec2(tx, ty),
-            IM_COL32(255, 255, 255, 230), nodes[i].label, nullptr, nodeW - 8.0f);
-
-        // Arrow to next
-        if (i < count - 1)
-        {
-            float ax0 = x1 + 2.0f;
-            float ax1 = x1 + gapX - 2.0f;
-            float ay = y0 + nodeH * 0.5f;
-            dl->AddLine(ImVec2(ax0, ay), ImVec2(ax1, ay), IM_COL32(180, 180, 180, 180), 1.5f);
-            // Arrowhead
-            dl->AddTriangleFilled(
-                ImVec2(ax1, ay),
-                ImVec2(ax1 - 7.0f, ay - 4.0f),
-                ImVec2(ax1 - 7.0f, ay + 4.0f),
-                IM_COL32(180, 180, 180, 180));
+        for (int i = 0; i < 4; ++i) {
+            const float x = startX + i * (boxWidth + gap);
+            drawList->AddRectFilled(ImVec2(x, startY), ImVec2(x + boxWidth, startY + boxHeight),
+                colors[i], 6.0f);
+            drawList->AddRect(ImVec2(x, startY), ImVec2(x + boxWidth, startY + boxHeight),
+                IM_COL32(255, 255, 255, 55), 6.0f);
+            const ImVec2 textSize = ImGui::CalcTextSize(labels[i]);
+            drawList->AddText(ImVec2(x + (boxWidth - textSize.x) * 0.5f,
+                startY + (boxHeight - textSize.y) * 0.5f), IM_COL32_WHITE, labels[i]);
+            if (i != 3) {
+                const float arrowStart = x + boxWidth + 3.0f;
+                const float arrowEnd = x + boxWidth + gap - 4.0f;
+                const float y = startY + boxHeight * 0.5f;
+                drawList->AddLine(ImVec2(arrowStart, y), ImVec2(arrowEnd, y),
+                    IM_COL32(115, 195, 235, 230), 2.0f);
+                drawList->AddTriangleFilled(ImVec2(arrowEnd, y), ImVec2(arrowEnd - 6.0f, y - 4.0f),
+                    ImVec2(arrowEnd - 6.0f, y + 4.0f), IM_COL32(115, 195, 235, 230));
+            }
         }
+        ImGui::Dummy(ImVec2(totalWidth, boxHeight + 14.0f));
     }
 
-    // Advance cursor past the diagram
-    ImGui::Dummy(ImVec2(totalW, nodeH + 14.0f));
-}
+    void TabOverview() {
+        SectionHeader("External DX12 overlay");
+        ImGui::TextWrapped(
+            "The overlay is rendered by a separate process. Example.exe installs remote hooks, "
+            "while HeadlessRenderer produces the UI into a shared D3D12 texture. The target's "
+            "Present hook composites that texture onto the current back buffer. The design supports fullscreen use.");
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Tab renderers
-// ─────────────────────────────────────────────────────────────────────────────
+        ImGui::Spacing();
+        SectionHeader("Frame path");
+        DrawPipeline();
+        ImGui::TextWrapped(
+            "The target process owns the D3D12 device and direct queue used for composition. "
+            "The renderer uses a device on the same adapter and shares a texture and fence with the target.");
 
-static void Tab_Overview()
-{
-    SectionHeader("  What is this project?");
-
-    ImGui::TextWrapped(
-        "External-DX11-Hook is a two-process overlay framework for DX11."
-        "It renders a fully interactive ImGui UI in a "
-        "completely separate, headless Direct3D 11 process, then composites the "
-        "result onto the proc's back-buffer every frame via a hooked "
-        "IDXGISwapChain::Present.");
-
-    ImGui::Spacing();
-    SectionHeader("  Frame pipeline");
-    DrawFlowDiagram();
-
-    SectionHeader("  Key design goals");
-
-    const char* goals[] = {
-        "No DLL injection  -  runs entirely as an external process.",
-        "Zero game-state coupling  -  overlay and hook are decoupled by IPC.",
-        "Full D3D11 state save/restore  -  the hook leaves the renderer spotless.",
-        "IDXGIKeyedMutex sync  -  GPU-side cross-process synchronisation, no spin-locks.",
-        "LiquidHookEx VTable engine  -  shellcode-section hooks with remote trampolines.",
-    };
-    for (auto* g : goals)
-    {
-        ImGui::Bullet();
-        ImGui::TextWrapped("%s", g);
+        ImGui::Spacing();
+        SectionHeader("What stays external");
+        ImGui::BulletText("No renderer DLL is loaded into the target process.");
+        ImGui::BulletText("LiquidHookEx writes hook code and state into target memory.");
+        ImGui::BulletText("Shared handles and a named handshake connect producer and consumer.");
+        ImGui::BulletText("The target hook forwards to the original Present after composition.");
     }
 
-    ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
-    ImGui::TextWrapped("Press DELETE at any time to cleanly unhook and exit.");
-    ImGui::PopStyleColor();
-}
+    void TabRemoteHook() {
+        SectionHeader("Bootstrap graphics context");
+        ImGui::TextWrapped(
+            "The graphics provider starts a remote bootstrap thread. It creates a helper window, "
+            "DXGI factory, D3D12 device, direct command queue, and helper swap chain. Those COM "
+            "pointers belong to the target process: the injector treats them as opaque addresses "
+            "and releases them through the remote release path.");
 
-// ─────────────────────────────────────────────────────────────────────────────
+        ImGui::Spacing();
+        SectionHeader("Hooks installed by Example.exe");
+        StepRow("01", "Present entry", "Resolves the Present slot from the bootstrap swap chain and installs the DXGI hook.");
+        StepRow("02", "Queue capture", "Hooks ID3D12CommandQueue::ExecuteCommandLists and remembers a target direct queue.");
+        StepRow("03", "Adapter selection", "The first target Present reports its adapter LUID; the renderer is created on that adapter.");
+        StepRow("04", "Composition", "The callback imports shared resources, records a full-screen triangle, submits it, then calls original Present.");
 
-static void Tab_Architecture()
-{
-    SectionHeader("  Projects / modules");
-
-    struct Module { const char* name; const char* role; ImVec4 accent; };
-    Module modules[] = {
-        { "Overlay.dll",        "HeadlessRenderer + ImGui render loop (producer side)",  ImVec4(0.25f,0.55f,1.0f,1.0f) },
-        { "Example.exe",    "Bootstrapper: inits LiquidHookEx, obtains dummy swapchain, hooks Present",       ImVec4(1.0f, 0.55f,0.20f,1.0f) },
-        { "LiquidHookEx.lib",   "External-process VTable / Detour / CallSite hook engine", ImVec4(0.30f,0.75f,0.45f,1.0f) },
-    };
-
-    for (auto& m : modules)
-    {
-        ImGui::PushStyleColor(ImGuiCol_Text, m.accent);
-        ImGui::Text("  %s", m.name);
-        ImGui::PopStyleColor();
-        ImGui::SameLine();
-        ImGui::SetCursorPosX(200.0f);
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.75f, 0.75f, 1.0f));
-        ImGui::TextWrapped("%s", m.role);
-        ImGui::PopStyleColor();
-        ImGui::Separator();
+        ImGui::Spacing();
+        SectionHeader("Remote callback constraints");
+        ImGui::TextWrapped(
+            "Hook callbacks run inside the target and are copied as shellcode. Their state lives in "
+            "target-side hook data. Interface pointers stored there must only be used or released "
+            "from the target process.");
     }
 
-    SectionHeader("  Handshake protocol (IPC)");
-    ImGui::TextWrapped(
-        "Before hooking, HeadlessRenderer publishes a SharedOverlayHandshake struct "
-        "into a named Windows file mapping:");
+    void TabSharedFrame() {
+        SectionHeader("Named handshake");
+        ImGui::TextWrapped(
+            "HeadlessRenderer publishes a DX12Overlay::Handshake in a named Windows file mapping. "
+            "It contains the protocol version, target PID, texture size and format, adapter LUID, "
+            "generation, and shared resource/fence handle values duplicated into the target.");
+        ImGui::Spacing();
+        ImGui::TextDisabled("Local\\LiquidOverlayHandshake_DX12_<target PID>");
 
-    ImGui::Spacing();
-    ImGui::Indent(12.0f);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.80f, 0.85f, 1.00f, 1.0f));
-    ImGui::Text("struct SharedOverlayHandshake {");
-    ImGui::Text("    HANDLE  sharedTextureHandle;  // NT kernel handle");
-    ImGui::Text("    UINT    width, height;         // texture dimensions");
-    ImGui::Text("    DWORD   producerPid;            // overlay process PID");
-    ImGui::Text("};");
-    ImGui::PopStyleColor();
-    ImGui::Unindent(12.0f);
+        ImGui::Spacing();
+        SectionHeader("Shared texture synchronization");
+        ImGui::BulletText("Producer renders ImGui into a BGRA shared texture.");
+        ImGui::BulletText("Producer signals ready value 2 * frame + 1.");
+        ImGui::BulletText("Target waits briefly for that value, composites the texture, and signals 2 * frame + 2.");
+        ImGui::BulletText("Producer waits for the consumer value before reusing the texture.");
 
-    ImGui::Spacing();
-    ImGui::TextWrapped(
-        "On the first Present() call after hooking, the shellcode reads this mapping "
-        "from inside <target>.exe's address space, calls OpenSharedResource() to import "
-        "the texture handle, then composites it every frame.");
-
-    SectionHeader("  Synchronisation");
-    ImGui::TextWrapped(
-        "Cross-process texture access is serialised with IDXGIKeyedMutex:");
-
-    ImGui::Spacing();
-    ImGui::Indent(12.0f);
-    ImGui::Bullet(); ImGui::Text("Producer (overlay) holds key 0  ->  renders into the texture.");
-    ImGui::Bullet(); ImGui::Text("ReleaseSync(key 1)  ->  hands ownership to the game.");
-    ImGui::Bullet(); ImGui::Text("Consumer (hkPresent) acquires key 1  ->  composites, then ReleaseSync(0).");
-    ImGui::Unindent(12.0f);
-
-    ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.70f, 0.20f, 1.0f));
-    ImGui::TextWrapped("  No CPU spin-locks. All waiting happens inside the GPU driver.");
-    ImGui::PopStyleColor();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-static void Tab_Hook()
-{
-    SectionHeader("  LiquidHookEx - VTable hook engine");
-    ImGui::TextWrapped(
-        "LiquidHookEx is an external-process hooking library (x64, Windows). "
-        "It allocates a trampoline inside the target process, writes a 14-byte "
-        "FF 25 absolute indirect jump to redirect execution, and injects a "
-        "position-independent shellcode payload that carries all state in a "
-        "remote PresentHookData struct.");
-
-    ImGui::Spacing();
-    SectionHeader("  IDXGISwapChain::Present - slot 8");
-
-    ImGui::Indent(12.0f);
-    ImGui::Bullet(); ImGui::TextWrapped("Address resolved via GetVTableFunction<8>(swapChain).");
-    ImGui::Bullet(); ImGui::TextWrapped("Hook installed with HookUsingAddr<PresentHookData>().");
-    ImGui::Bullet(); ImGui::TextWrapped(
-        "Two RipSlots are patched into the shellcode body: "
-        "g_pOriginalPresent (trampoline address) and g_pHookData (remote struct pointer).");
-    ImGui::Unindent(12.0f);
-
-    ImGui::Spacing();
-    SectionHeader("  hkPresent - per-frame work");
-
-    struct Step { const char* num; const char* desc; };
-    Step steps[] = {
-        { "1", "First call: init D3D11 device ref, compile VS/PS, open shared texture, create SRV + keyed mutex." },
-        { "2", "Save full D3D11StateBlock (shaders, IA, OM, RS, viewports, SRVs, samplers)." },
-        { "3", "AcquireSync(key 1, 8 ms timeout) on the overlay texture." },
-        { "4", "Get back-buffer, create RTV, set fullscreen viewport." },
-        { "5", "Draw 4 verts as TRIANGLESTRIP - fullscreen-quad via SV_VertexID, no VB needed." },
-        { "6", "Restore full D3D11StateBlock, release all captured COM refs." },
-        { "7", "ReleaseSync(key 0) - returns texture to the overlay producer." },
-        { "8", "Call original Present trampoline." },
-    };
-    for (auto& s : steps)
-    {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.30f, 0.65f, 1.0f, 1.0f));
-        ImGui::Text("  [%s]", s.num);
-        ImGui::PopStyleColor();
-        ImGui::SameLine();
-        ImGui::TextWrapped("%s", s.desc);
+        ImGui::Spacing();
+        SectionHeader("Why use a fence?");
+        ImGui::TextWrapped(
+            "D3D12 work is asynchronous. The shared fence orders access to the texture across "
+            "the renderer and target queues. A short producer wait in Present lets the game "
+            "continue presenting if a new overlay frame is not ready yet.");
     }
 
-    ImGui::Spacing();
-    SectionHeader("  Composite shaders (HLSL)");
-    ImGui::TextWrapped("Compiled at hook-install time into PresentHookData::vsBlob / psBlob (≤ 4096 bytes each):");
-    ImGui::Spacing();
-    ImGui::Indent(12.0f);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.80f, 0.85f, 1.00f, 1.0f));
-    ImGui::Text("VS: SV_VertexID -> uv -> SV_Position  (no vertex buffer)");
-    ImGui::Text("PS: Texture2D.Sample(s, uv)  ->  SV_Target");
-    ImGui::Text("Blend: SRC_ALPHA / INV_SRC_ALPHA  (straight alpha)");
-    ImGui::PopStyleColor();
-    ImGui::Unindent(12.0f);
-}
+    void TabRenderer() {
+        SectionHeader("HeadlessRenderer");
+        ImGui::TextWrapped(
+            "HeadlessRenderer creates a D3D12 device on the selected adapter, allocates the shared "
+            "BGRA texture and fence, and runs an ImGui render loop without a presentation swap chain.");
 
-// ─────────────────────────────────────────────────────────────────────────────
+        ImGui::Spacing();
+        SectionHeader("Input and UI");
+        ImGui::BulletText("Mouse position and buttons are sampled relative to the target window.");
+        ImGui::BulletText("A low-level mouse hook collects wheel input for ImGui.");
+        ImGui::BulletText("RenderObjectManager draws the menu and registered render objects into the texture.");
 
-static void Tab_Renderer()
-{
-    SectionHeader("  HeadlessRenderer - overlay producer");
-    ImGui::TextWrapped(
-        "HeadlessRenderer owns a dedicated D3D11 device (no swap chain, no window). "
-        "It renders ImGui into a DXGI_FORMAT_B8G8R8A8_UNORM shared texture with "
-        "D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX, then publishes the NT handle via "
-        "the handshake file mapping.");
-
-    ImGui::Spacing();
-    SectionHeader("  Thread model");
-
-    struct Thread { const char* name; const char* purpose; };
-    Thread threads[] = {
-        { "Render thread",       "Device init -> shared texture -> PublishHandshake -> ImGui render loop." },
-        { "ScrollHook thread",   "Installs WH_MOUSE_LL; pumps messages; feeds wheel delta to ImGuiIO via InterlockedAdd." },
-        { "Resize watch thread", "Polls GetClientRect; calls Resize() when game window changes. (disabled - see known issues)" },
-    };
-    for (auto& t : threads)
-    {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.30f, 0.75f, 0.45f, 1.0f));
-        ImGui::Text("  %s", t.name);
-        ImGui::PopStyleColor();
-        ImGui::SameLine();
-        ImGui::SetCursorPosX(170.0f);
-        ImGui::TextWrapped("%s", t.purpose);
-        ImGui::Separator();
+        ImGui::Spacing();
+        SectionHeader("Recovery");
+        ImGui::TextWrapped(
+            "Example.exe watches the target adapter and the composited frame counter. It can "
+            "restart the renderer after an adapter change or stalled frame stream. A new handshake "
+            "generation tells the Present hook to release its old imports and rebuild against the new texture and fence.");
+        ImGui::Spacing();
+        ImGui::TextDisabled("Press DELETE in Example.exe to stop the renderer and remove the hooks.");
     }
-
-    SectionHeader("  Input feeding (FeedInput)");
-    ImGui::Bullet(); ImGui::TextWrapped("GetCursorPos + ScreenToClient -> ImGuiIO::MousePos.");
-    ImGui::Bullet(); ImGui::TextWrapped("GetAsyncKeyState for LMB / RMB / MMB.");
-    ImGui::Bullet(); ImGui::TextWrapped("InterlockedExchange on s_wheelAccum -> ImGuiIO::MouseWheel.");
-    ImGui::Bullet(); ImGui::TextWrapped("DeltaTime from GetTickCount64 (no QPC overhead).");
-
-    ImGui::Spacing();
-    SectionHeader("  RenderObjectManager");
-    ImGui::TextWrapped(
-        "A simple polymorphic list of RenderObject* instances. Each object implements "
-        "virtual void Render(ImVec2 displaySize, ImVec2 cursorPos, bool bMouseReleased). "
-        "Objects are pushed via AddRenderObject() and iterated each frame.");
 }
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-static void Tab_KnownIssues()
-{
-    SectionHeader("  Known issues");
-
-    struct Issue { const char* title; const char* detail; bool critical; };
-    Issue issues[] = {
-        {
-            "bHandleResize = false (crashes)",
-            "The resize path inside hkPresent calls g_overlayMutex->Release() while "
-            "still holding the AcquireSync(key 1) lock - a keyed mutex protocol "
-            "violation. Fix: call ReleaseSync(0) before releasing + nulling resources, "
-            "then return early to let the next frame re-init cleanly.",
-            true
-        }
-    };
-
-    for (auto& issue : issues)
-    {
-        ImVec4 headerCol = issue.critical
-            ? ImVec4(1.0f, 0.40f, 0.30f, 1.0f)
-            : ImVec4(0.85f, 0.70f, 0.20f, 1.0f);
-
-        if (ImGui::CollapsingHeader(issue.title))
-        {
-            ImGui::Indent(12.0f);
-            ImGui::PushStyleColor(ImGuiCol_Text, headerCol);
-            if (issue.critical)
-                ImGui::TextWrapped("  CRITICAL");
-            else
-                ImGui::TextWrapped("  LOW / COSMETIC");
-            ImGui::PopStyleColor();
-            ImGui::Spacing();
-            ImGui::TextWrapped("%s", issue.detail);
-            ImGui::Unindent(12.0f);
-            ImGui::Spacing();
-        }
-    }
-
-    ImGui::Spacing();
-    SectionHeader("  Planned improvements");
-    ImGui::Bullet(); ImGui::TextWrapped("Resize support with correct mutex teardown.");
-    ImGui::Bullet(); ImGui::TextWrapped("Proper keyboard input via WH_KEYBOARD_LL for text-entry widgets.");
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Entry point
-// ─────────────────────────────────────────────────────────────────────────────
-
-void RenderLiquidMenu()
-{
+void RenderLiquidMenu() {
     const ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+        ImGuiCond_Once, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(700.0f, 520.0f), ImGuiCond_Once);
+    ImGui::SetNextWindowBgAlpha(0.96f);
 
-    // Centre the window on first use
-    ImGui::SetNextWindowPos(
-        ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
-        ImGuiCond_Once,
-        ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(640.0f, 500.0f), ImGuiCond_Once);
-    ImGui::SetNextWindowBgAlpha(0.94f);
-
-    ImGuiWindowFlags flags =
-        ImGuiWindowFlags_NoScrollbar |
-        ImGuiWindowFlags_NoScrollWithMouse;
-
-    if (!ImGui::Begin("  LiquidHookEx  |  External DX11 Hook", nullptr, flags))
-    {
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+    if (!ImGui::Begin("LiquidHookEx | External DX12 Overlay", nullptr, flags)) {
         ImGui::End();
         return;
     }
 
-    // ── version / badge row ──────────────────────────────────────────────────
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.50f, 0.50f, 0.55f, 1.0f));
-    ImGui::Text("v1.0   x64 Windows   DX11   Generic");
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.60f, 0.68f, 1.0f));
+    ImGui::Text("DX12   |   x64 Windows   |   FULLSCREEN");
     ImGui::PopStyleColor();
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 150.0f);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.30f, 0.75f, 0.45f, 1.0f));
-    ImGui::Text("EXTERNAL  |  NO-INJECT");
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 145.0f);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.30f, 0.82f, 0.58f, 1.0f));
+    ImGui::Text("EXTERNAL PROCESS");
     ImGui::PopStyleColor();
     ImGui::Separator();
-    ImGui::Spacing();
 
-    // ── tab bar ──────────────────────────────────────────────────────────────
-    if (ImGui::BeginTabBar("##MainTabs", ImGuiTabBarFlags_None))
-    {
-        if (ImGui::BeginTabItem("  Overview  "))
-        {
-            ImGui::BeginChild("##ov", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
-            Tab_Overview();
+    if (ImGui::BeginTabBar("##Dx12OverviewTabs")) {
+        if (ImGui::BeginTabItem("Overview")) {
+            ImGui::BeginChild("##dx12Overview", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+            TabOverview();
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
-
-        if (ImGui::BeginTabItem("  Architecture  "))
-        {
-            ImGui::BeginChild("##arch", ImVec2(0, 0), false);
-            Tab_Architecture();
+        if (ImGui::BeginTabItem("Remote hook")) {
+            ImGui::BeginChild("##dx12RemoteHook", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+            TabRemoteHook();
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
-
-        if (ImGui::BeginTabItem("  Hook  "))
-        {
-            ImGui::BeginChild("##hook", ImVec2(0, 0), false);
-            Tab_Hook();
+        if (ImGui::BeginTabItem("Shared frame")) {
+            ImGui::BeginChild("##dx12SharedFrame", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+            TabSharedFrame();
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
-
-        if (ImGui::BeginTabItem("  Renderer  "))
-        {
-            ImGui::BeginChild("##rend", ImVec2(0, 0), false);
-            Tab_Renderer();
+        if (ImGui::BeginTabItem("Renderer & recovery")) {
+            ImGui::BeginChild("##dx12Renderer", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+            TabRenderer();
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
-
-        if (ImGui::BeginTabItem("  Known Issues  "))
-        {
-            ImGui::BeginChild("##issues", ImVec2(0, 0), false);
-            Tab_KnownIssues();
-            ImGui::EndChild();
-            ImGui::EndTabItem();
-        }
-
         ImGui::EndTabBar();
     }
-
     ImGui::End();
 }
